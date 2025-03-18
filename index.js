@@ -1,282 +1,361 @@
-// --------------------- Validation Constants ---------------------
+
+  //Validation Constants
 const TEXT_MAX_LENGTH = 100;
 const NUMBER_MIN = 1;
 const NUMBER_MAX = 100;
 const DATE_MIN = "2020-01-01";
 const DATE_MAX = "2025-12-31";
 
-// --------------------- Global Variables & State ---------------------
+//Global Variables & State
 let questionCounter = 0;
 let draggedElement = null;
 let currentActiveQuestion = null;
-let db; // IndexedDB instance for file uploads
 
 const state = {
-  elements: {},
-  get: function(key) {
-    if (!this.elements[key]) {
-      this.elements[key] = document.getElementById(key) || document.querySelector(`.${key}`);
-    }
-    return this.elements[key];
-  }
+  questionTemplate: null,
+  addNewBtn: null,
+  preViewButton: null,
+  saveButton: null,
+  warningDiv: null,
+  warningMsg: null,
 };
 
-// --------------------- IndexedDB Functions ---------------------
-function initDB() {
-  const request = indexedDB.open("SubmissionDB", 1);
-  
-  request.onerror = (event) => console.error("IndexedDB error:", event.target.error);
-  
-  request.onsuccess = (event) => {
-    db = event.target.result;
-  };
-  
-  request.onupgradeneeded = (event) => {
-    db = event.target.result;
-    if (!db.objectStoreNames.contains("files")) {
-      db.createObjectStore("files", { keyPath: "id" });
-    }
-  };
-}
-
-function dbOperation(storeName, mode, operation) {
-  return new Promise((resolve, reject) => {
-    if (!db) {
-      reject(new Error("DB not initialized"));
-      return;
-    }
-    
-    const transaction = db.transaction([storeName], mode);
-    const store = transaction.objectStore(storeName);
-    
-    const request = operation(store);
-    
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-function saveFileToDB(id, file) {
-  return dbOperation("files", "readwrite", (store) => {
-    return store.put({ id, file });
-  }).then(() => {
-    console.log("File saved for question id:", id);
-  }).catch(error => {
-    console.error("Error saving file:", error);
-  });
-}
-
-function getFileFromDB(id) {
-  return dbOperation("files", "readonly", (store) => {
-    return store.get(id);
-  }).then(result => result ? result.file : null)
-    .catch(error => {
-      console.error("Error retrieving file:", error);
-      return null;
+function hideRemaining(currentElement) {
+  document
+    .querySelectorAll(".questions-body .question-element")
+    .forEach((question) => {
+      if (question !== currentElement) {
+        const dropdownEl = question.querySelector(".question-type-dropdown");
+        const footerEl = question.querySelector(".question-element-footer");
+        const vadilationConfigDiv =
+          question.querySelector(".validation-config");
+        if (dropdownEl) dropdownEl.style.display = "none";
+        if (footerEl) footerEl.style.display = "none";
+        if (vadilationConfigDiv) vadilationConfigDiv.style.display = "none";
+      }
     });
 }
 
-// --------------------- UI & Utility Functions ---------------------
 function positionButton(elem) {
   currentActiveQuestion = elem;
   const rect = elem.getBoundingClientRect();
-  const containerRect = document.querySelector(".questions-section").getBoundingClientRect();
-  const addNewBtn = state.get("add-new-btn");
-  
-  addNewBtn.style.top = `${rect.top - containerRect.top + 50}px`;
-  addNewBtn.style.left = `${rect.right - containerRect.left + 10}px`;
+  const containerRect = document
+    .querySelector(".questions-section")
+    .getBoundingClientRect();
+  const addNewBtn = state.addNewBtn;
+  addNewBtn.style.top = rect.top - containerRect.top + 50 + "px";
+  addNewBtn.style.left = rect.right - containerRect.left + 10 + "px";
   addNewBtn.style.display = "block";
 }
 
 function showWarning(message, confirmAction = null, cancelAction = null) {
-  const warningDiv = state.get("showWarningDiv");
-  const warningMsg = state.get("warning-msg");
-  
+  const warningDiv =
+    state.warningDiv || document.getElementById("showWarningDiv");
   warningDiv.style.display = "block";
-  warningMsg.textContent = message;
-  
+  state.warningMsg.textContent = message;
   const okBtn = warningDiv.querySelector(".okBtn");
   const cancelBtn = warningDiv.querySelector(".cancelBtn");
-  
   // Remove previous event listeners by cloning buttons
   const newOkBtn = okBtn.cloneNode(true);
   const newCancelBtn = cancelBtn.cloneNode(true);
   okBtn.parentNode.replaceChild(newOkBtn, okBtn);
   cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
-  
-  const hideAndExecute = (action) => {
-    warningDiv.style.display = "none";
-    if (action) action();
-  };
-  
-  newOkBtn.addEventListener("click", () => hideAndExecute(confirmAction));
-  newCancelBtn.addEventListener("click", () => hideAndExecute(cancelAction));
+  function okHandler() {
+    hideWarning();
+    if (confirmAction) confirmAction();
+    cleanup();
+  }
+  function cancelHandler() {
+    hideWarning();
+    if (cancelAction) cancelAction();
+    cleanup();
+  }
+  function cleanup() {
+    newOkBtn.removeEventListener("click", okHandler);
+    newCancelBtn.removeEventListener("click", cancelHandler);
+  }
+  newOkBtn.addEventListener("click", okHandler);
+  newCancelBtn.addEventListener("click", cancelHandler);
 }
 
-function hideRemaining(currentElement) {
-  document.querySelectorAll(".questions-body .question-element").forEach((question) => {
-    if (question !== currentElement) {
-      const dropdownEl = question.querySelector(".question-type-dropdown");
-      const footerEl = question.querySelector(".question-element-footer");
-      
-      if (dropdownEl) dropdownEl.style.display = "none";
-      if (footerEl) footerEl.style.display = "none";
-    }
-  });
+function hideWarning() {
+  const warningDiv =
+    state.warningDiv || document.getElementById("showWarningDiv");
+  warningDiv.style.display = "none";
 }
 
 function setupPlaceholder(questionInput) {
-  const defaultText = "Question";
-  
-  // Set initial state
-  if (questionInput.textContent.trim() === defaultText) {
+  // Mimic placeholder behavior on contenteditable divs
+  if (questionInput.textContent.trim() === "Question") {
     questionInput.classList.add("placeholder");
   }
-  
-  // Focus event
-  questionInput.addEventListener("focus", function() {
-    if (this.textContent.trim() === defaultText && this.classList.contains("placeholder")) {
+  questionInput.addEventListener("focus", function () {
+    if (
+      this.textContent.trim() === "Question" &&
+      this.classList.contains("placeholder")
+    ) {
       this.textContent = "";
       this.classList.remove("placeholder");
     }
   });
-  
-  // Blur event
-  questionInput.addEventListener("blur", function() {
+  questionInput.addEventListener("blur", function () {
     if (this.textContent.trim() === "") {
-      this.textContent = defaultText;
+      this.textContent = "Question";
       this.classList.add("placeholder");
     }
   });
 }
 
-function createElementWithAttributes(tag, attributes = {}) {
-  const element = document.createElement(tag);
-  
-  Object.entries(attributes).forEach(([key, value]) => {
-    if (key === 'textContent') {
-      element.textContent = value;
-    } else if (key === 'classList' && Array.isArray(value)) {
-      value.forEach(cls => element.classList.add(cls));
-    } else {
-      element.setAttribute(key, value);
-    }
-  });
-  
-  return element;
+function getDragAfterElement(container, y) {
+  const draggableElements = [
+    ...container.querySelectorAll(".question-element:not(.dragging)"),
+  ];
+  return draggableElements.reduce(
+    (closest, child) => {
+      const box = child.getBoundingClientRect();
+      const offset = y - box.top - box.height / 2;
+      return offset < 0 && offset > closest.offset
+        ? { offset, element: child }
+        : closest;
+    },
+    { offset: Number.NEGATIVE_INFINITY }
+  ).element;
 }
 
-function createOptionsList() {
-  const optionsContainer = createElementWithAttributes('div', { classList: ['options-container'] });
-  const inputField = createElementWithAttributes('input', { type: 'text', placeholder: 'Enter option' });
-  const addButton = createElementWithAttributes('button', { 
-    textContent: 'Add Option', 
-    classList: ['add-option-btn'] 
-  });
-  const optionsList = createElementWithAttributes('ul', { classList: ['options-list'] });
-  
+function createValidationConfig(type) {
+  switch (type) {
+    case "Text":
+      return `
+          <label>Max Length: 
+            <input type="number" class="max-length-input" value="${TEXT_MAX_LENGTH}" min="1">
+          </label>
+        `;
+    case "Number":
+      return `
+          <label>Min Value: 
+            <input type="number" class="min-value-input" value="${NUMBER_MIN}">
+          </label>
+          <label>Max Value: 
+            <input type="number" class="max-value-input" value="${NUMBER_MAX}">
+          </label>
+        `;
+    case "Date":
+      return `
+          <label>Min Date: 
+            <input type="date" class="min-date-input" value="${DATE_MIN}">
+          </label>
+          <label>Max Date: 
+            <input type="date" class="max-date-input" value="${DATE_MAX}">
+          </label>
+        `;
+    default:
+      return "";
+  }
+}
+
+function createDropdownOptionsContainer() {
+  const optionsContainer = document.createElement("div");
+  optionsContainer.classList.add("options-container");
+
+  const inputField = document.createElement("input");
+  inputField.type = "text";
+  inputField.placeholder = "Enter option";
+
+  const addButton = document.createElement("button");
+  addButton.textContent = "Add Option";
+  addButton.classList.add("add-option-btn");
+
+  const optionsList = document.createElement("ul");
+  optionsList.classList.add("options-list");
+
   addButton.addEventListener("click", () => {
     if (inputField.value.trim() !== "") {
-      const listItem = createElementWithAttributes('li', { textContent: inputField.value });
-      const deleteBtn = createElementWithAttributes('button', { 
-        textContent: '✖', 
-        classList: ['delete-option-btn'] 
-      });
-      
+      const listItem = document.createElement("li");
+      listItem.textContent = inputField.value;
+
+      const deleteBtn = document.createElement("button");
+      deleteBtn.textContent = "✖";
+      deleteBtn.classList.add("delete-option-btn");
       deleteBtn.addEventListener("click", () => listItem.remove());
+
       listItem.appendChild(deleteBtn);
       optionsList.appendChild(listItem);
       inputField.value = "";
     }
   });
-  
+
   optionsContainer.appendChild(inputField);
   optionsContainer.appendChild(addButton);
   optionsContainer.appendChild(optionsList);
-  
+
   return optionsContainer;
 }
 
-function populateQuestionTypeFields(selectedValue, container) {
+function populateQuestionTypeFields(
+  selectedValue,
+  container,
+  isPreview = false
+) {
   container.innerHTML = "";
-  
   if (selectedValue === "Dropdown" || selectedValue === "Multiple Dropdown") {
-    container.appendChild(createOptionsList());
-  } else {
-    const inputTypes = {
-      "Text": { type: "text", placeholder: "Enter text answer" },
-      "Number": { type: "number", placeholder: "Enter number" },
-      "Date": { type: "date" },
-      "File upload": { type: "file" }
-    };
-    
-    const inputConfig = inputTypes[selectedValue] || inputTypes["Text"];
-    const input = createElementWithAttributes('input', inputConfig);
-    input.disabled = true;
-    container.appendChild(input);
+    container.appendChild(createDropdownOptionsContainer());
+    return;
   }
+  let inputElement = document.createElement("input");
+  switch (selectedValue) {
+    case "Text":
+      inputElement.type = "text";
+      inputElement.placeholder = "Enter text answer";
+      break;
+    case "Number":
+      inputElement.type = "number";
+      inputElement.placeholder = "Enter number";
+      break;
+    case "Date":
+      inputElement.type = "date";
+      break;
+    case "File upload":
+      inputElement.type = "file";
+      container.appendChild(inputElement);
+      return;
+  }
+  inputElement.disabled = true ? !isPreview : false;
+  container.appendChild(inputElement);
+
+  //   Add validation config
+  if (!isPreview) {
+    const validationDiv = document.createElement("div");
+    validationDiv.classList.add("validation-config");
+    validationDiv.innerHTML = createValidationConfig(selectedValue);
+    container.appendChild(validationDiv);
+  }
+  return inputElement;
+}
+
+function getValidationConfigFromQuestion(question, questionType) {
+  const validationConfig = {};
+  switch (questionType) {
+    case "Text":
+      const maxLengthInput = question.querySelector(".max-length-input");
+      validationConfig.maxLength = maxLengthInput
+        ? parseInt(maxLengthInput.value)
+        : TEXT_MAX_LENGTH;
+      break;
+    case "Number":
+      const minValueInput = question.querySelector(".min-value-input");
+      const maxValueInput = question.querySelector(".max-value-input");
+      validationConfig.min = minValueInput
+        ? parseInt(minValueInput.value)
+        : NUMBER_MIN;
+      validationConfig.max = maxValueInput
+        ? parseInt(maxValueInput.value)
+        : NUMBER_MAX;
+      break;
+    case "Date":
+      const minDateInput = question.querySelector(".min-date-input");
+      const maxDateInput = question.querySelector(".max-date-input");
+      validationConfig.minDate = minDateInput ? minDateInput.value : DATE_MIN;
+      validationConfig.maxDate = maxDateInput ? maxDateInput.value : DATE_MAX;
+      break;
+  }
+  return validationConfig;
+}
+
+function createPreviewSelect(questionType, optionsList, isRequired) {
+  const select = document.createElement("select");
+  select.multiple = questionType === "Multiple Dropdown";
+  const defaultOption = document.createElement("option");
+  defaultOption.textContent = "Choose an option";
+  defaultOption.value = "";
+  select.appendChild(defaultOption);
+  if (optionsList) {
+    optionsList.querySelectorAll("li").forEach((li) => {
+      const option = document.createElement("option");
+      option.textContent = li.textContent.replace("✖", "").trim();
+      option.value = li.textContent.replace("✖", "").trim().toLowerCase();
+      select.appendChild(option);
+    });
+  }
+  if (isRequired) select.required = true;
+  return select;
+}
+
+function createErrorSpan() {
+  let errorSpan = document.createElement("span");
+  errorSpan.className = "error-message";
+  errorSpan.style.color = "red";
+  errorSpan.style.fontSize = "0.9em";
+  return errorSpan;
 }
 
 // --------------------- Validation Functions ---------------------
-function attachValidation(input, questionType, isRequired) {
-  let errorSpan = input.parentNode.querySelector(".error-message");
-  
+function attachValidation(input, questionType, isRequired, validationConfig) {
+  let errorSpan = input?.parentNode.querySelector(".error-message");
   if (!errorSpan) {
-    errorSpan = createElementWithAttributes('span', { 
-      className: 'error-message',
-      style: 'color: red; font-size: 0.9em;'
-    });
+    errorSpan = createErrorSpan();
     input.parentNode.insertBefore(errorSpan, input.nextSibling);
   }
-  
   function validate() {
     let errorMsg = "";
     const value = input.value.trim();
-    
+
     if (isRequired && !value) {
       errorMsg = "This field is required";
     } else if (value) {
-      // Type-specific validations
-      const validations = {
-        "Text": () => value.length > TEXT_MAX_LENGTH ? `Maximum length is ${TEXT_MAX_LENGTH} characters` : "",
-        "Number": () => {
+      switch (questionType) {
+        case "Text":
+          const maxLength = validationConfig?.maxLength || TEXT_MAX_LENGTH;
+          if (value.length > maxLength) {
+            errorMsg = `Maximum length is ${maxLength} characters`;
+          }
+          break;
+        case "Number":
           const num = Number(value);
-          return isNaN(num) ? "Please enter a valid number" : 
-                 (num < NUMBER_MIN || num > NUMBER_MAX) ? `Number must be between ${NUMBER_MIN} and ${NUMBER_MAX}` : "";
-        },
-        "Date": () => (value < DATE_MIN || value > DATE_MAX) ? `Date must be between ${DATE_MIN} and ${DATE_MAX}` : ""
-      };
-      
-      if (validations[questionType]) {
-        errorMsg = validations[questionType]();
+          const minValue = validationConfig?.min || NUMBER_MIN;
+          const maxValue = validationConfig?.max || NUMBER_MAX;
+
+          if (isNaN(num)) {
+            errorMsg = "Please enter a valid number";
+          } else if (num < minValue || num > maxValue) {
+            errorMsg = `Number must be between ${minValue} and ${maxValue}`;
+          }
+          break;
+        case "Date":
+          const minDate = validationConfig?.minDate || DATE_MIN;
+          const maxDate = validationConfig?.maxDate || DATE_MAX;
+
+          if (value < minDate || value > maxDate) {
+            errorMsg = `Date must be between ${minDate} and ${maxDate}`;
+          }
+          break;
       }
     }
-    
+
     errorSpan.textContent = errorMsg;
     return errorMsg === "";
   }
-  
-  // Add event listeners based on field type
-  if (questionType === "Date") {
-    input.addEventListener("change", validate);
-  } else {
-    input.addEventListener("input", validate);
-  }
-  
+
+  const eventType = questionType === "Date" ? "change" : "input";
+  input.addEventListener(eventType, validate);
   input.addEventListener("blur", validate);
+
   return validate;
 }
 
 function validatePreviewForm() {
   let valid = true;
   let firstInvalidField = null;
-  
-  const fields = document.querySelectorAll(".preview-section input, .preview-section select, .preview-section textarea");
-  
+  const fields = document.querySelectorAll(
+    ".preview-section input, .preview-section select, .preview-section textarea"
+  );
   fields.forEach((field) => {
-    field.dispatchEvent(new Event("input", { bubbles: true }));
+    if (field.type === "date") {
+      field.dispatchEvent(new Event("change", { bubbles: true }));
+      field.dispatchEvent(new Event("blur", { bubbles: true }));
+    } else {
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    }
     const errorSpan = field.parentNode.querySelector(".error-message");
-    
     if (errorSpan && errorSpan.textContent) {
       valid = false;
       if (!firstInvalidField) {
@@ -284,305 +363,232 @@ function validatePreviewForm() {
       }
     }
   });
-  
   return { valid, firstInvalidField };
 }
 
-// --------------------- Preview Generation ---------------------
 function generatePreview() {
   const previewSection = document.querySelector(".preview-section");
-  previewSection.innerHTML = "<h2>Answer Section</h2>";
-  
-  document.querySelectorAll(".questions-body .question-element").forEach((question, index) => {
-    const questionText = question.querySelector(".question-input").textContent;
-    const selectEl = question.querySelector(".question-type-dropdown select");
-    const questionType = (selectEl && (selectEl.value || selectEl.options[selectEl.selectedIndex].text)) || "";
-    const isRequired = question.querySelector(".switch input[type='checkbox']").checked;
-    
-    // Create preview question container
-    const previewQuestion = createElementWithAttributes('div', { classList: ['preview-question'] });
-    previewQuestion.dataset.questionId = question.querySelector(".question-input").id || question.id;
-    previewQuestion.dataset.questionType = questionType;
-    
-    // Add question label
-    const questionLabel = createElementWithAttributes('label', { 
-      textContent: `${index + 1}. ${questionText} ${isRequired ? "*" : ""}`
-    });
-    previewQuestion.appendChild(questionLabel);
-    
-    // Handle different question types
-    if (questionType === "Dropdown" || questionType === "Multiple Dropdown") {
-      const select = createElementWithAttributes('select', {});
-      select.multiple = questionType === "Multiple Dropdown";
-      select.required = isRequired;
-      
-      // Add default option
-      const defaultOption = createElementWithAttributes('option', { 
-        textContent: "Choose an option", 
-        value: "" 
-      });
-      select.appendChild(defaultOption);
-      
-      // Add all options from the question
-      const optionsList = question.querySelector(".options-list");
-      if (optionsList) {
-        optionsList.querySelectorAll("li").forEach((li) => {
-          const optionText = li.textContent.replace("✖", "").trim();
-          const option = createElementWithAttributes('option', {
-            textContent: optionText,
-            value: optionText.toLowerCase()
-          });
-          select.appendChild(option);
+  previewSection.innerHTML = "<h2>Preview Section</h2>";
+  document
+    .querySelectorAll(".questions-body .question-element")
+    .forEach((question, index) => {
+      const questionText =
+        question.querySelector(".question-input").textContent;
+      const selectEl = question.querySelector(".question-type-dropdown select");
+      const questionType =
+        (selectEl &&
+          (selectEl.value || selectEl.options[selectEl.selectedIndex].text)) ||
+        "";
+      const isRequired = question.querySelector(
+        ".switch input[type='checkbox']"
+      ).checked;
+      const validationConfig = getValidationConfigFromQuestion(
+        question,
+        questionType
+      );
+      const previewQuestion = document.createElement("div");
+      previewQuestion.classList.add("preview-question");
+      // Store data attributes
+      previewQuestion.dataset.questionId =
+        question.querySelector(".question-input").id || question.id;
+      previewQuestion.dataset.questionType = questionType;
+      previewQuestion.dataset.validationConfig =
+        JSON.stringify(validationConfig);
+
+      const questionLabel = document.createElement("label");
+      questionLabel.textContent = `${index + 1}. ${questionText} ${
+        isRequired ? "*" : ""
+      }`;
+      previewQuestion.appendChild(questionLabel);
+
+      const questionBody = document.createElement("div");
+      previewQuestion.appendChild(questionBody);
+      if (questionType !== "Dropdown" && questionType !== "Multiple Dropdown") {
+        const input = populateQuestionTypeFields(
+          questionType,
+          questionBody,
+          true
+        );
+        attachValidation(input, questionType, isRequired, validationConfig);
+      } else {
+        const optionsList = question.querySelector(".options-list");
+        const select = createPreviewSelect(
+          questionType,
+          optionsList,
+          isRequired
+        );
+        previewQuestion.appendChild(select);
+        select.addEventListener("change", () => {
+          const errorSpan = select.parentNode.querySelector(".error-message");
+          if (!select.value && isRequired) {
+            if (errorSpan) errorSpan.textContent = "Please select an option";
+          } else if (errorSpan) {
+            errorSpan.textContent = "";
+          }
         });
+        const errorSpan = createErrorSpan();
+        previewQuestion.appendChild(errorSpan);
       }
-      
-      // Add validation
-      select.addEventListener("change", () => {
-        const errorSpan = select.parentNode.querySelector(".error-message") || 
-                          createElementWithAttributes('span', { 
-                            className: 'error-message', 
-                            style: 'color: red; font-size: 0.9em;' 
-                          });
-        errorSpan.textContent = !select.value && isRequired ? "Please select an option" : "";
-      });
-      
-      previewQuestion.appendChild(select);
-      
-      // Add error message span
-      const errorSpan = createElementWithAttributes('span', { 
-        className: 'error-message', 
-        style: 'color: red; font-size: 0.9em;' 
-      });
-      previewQuestion.appendChild(errorSpan);
-    } else {
-      // Handle other input types
-      const inputTypes = {
-        "Text": { type: "text", placeholder: "Enter text answer" },
-        "Number": { type: "number", placeholder: "Enter number" },
-        "Date": { type: "date" },
-        "File upload": { type: "file" }
-      };
-      
-      const inputConfig = inputTypes[questionType] || inputTypes["Text"];
-      const input = createElementWithAttributes('input', inputConfig);
-      input.required = isRequired;
-      
-      previewQuestion.appendChild(input);
-      
-      // Add validation for non-file inputs
-      if (questionType !== "File upload") {
-        attachValidation(input, questionType, isRequired);
-      }
-    }
-    
-    previewSection.appendChild(previewQuestion);
-  });
-  
-  // Add submit button
-  const submitBtn = createElementWithAttributes('button', { 
-    textContent: 'Submit', 
-    classList: ['submit-preview-btn'] 
-  });
+      previewSection.appendChild(previewQuestion);
+    });
+  const submitBtn = document.createElement("button");
+  submitBtn.textContent = "Submit";
+  submitBtn.classList.add("submit-preview-btn");
   submitBtn.addEventListener("click", (e) => {
     e.preventDefault();
     submitAnswers();
   });
-  
+
   previewSection.appendChild(submitBtn);
 }
 
-// --------------------- Submission Functions ---------------------
-async function submitAnswers() {
+function submitAnswers() {
   const { valid, firstInvalidField } = validatePreviewForm();
-  
   if (!valid) {
     showWarning("Please fix the errors on the form before submitting.", () => {
       if (firstInvalidField) firstInvalidField.focus();
     });
     return;
   }
-  
   const submissionAnswers = [];
-  const previewQuestions = document.querySelectorAll(".preview-section .preview-question");
-  
-  for (const pq of previewQuestions) {
+  const previewQuestions = document.querySelectorAll(
+    ".preview-section .preview-question"
+  );
+  previewQuestions.forEach((pq) => {
     const questionId = pq.dataset.questionId;
     const questionType = pq.dataset.questionType;
     const field = pq.querySelector("select") || pq.querySelector("input");
-    
-    if (questionType === "File upload" && field && field.files && field.files.length > 0) {
-      const file = field.files[0];
-      submissionAnswers.push({
-        id: questionId,
-        type: questionType,
-        answer: "FILE_IN_DB"
-      });
-      await saveFileToDB(questionId, file);
+    const question = pq.querySelector("label");
+    if (questionType === "File upload") {
+      console.log("File saved");
     } else {
+      const answer = field ? field.value : "";
       submissionAnswers.push({
         id: questionId,
         type: questionType,
-        answer: field ? field.value : ""
+        question: question.textContent,
+        answer: answer,
       });
     }
-  }
-  
-  localStorage.setItem("submissionData", JSON.stringify({ answers: submissionAnswers }));
-  showWarning("Submission saved successfully!");
-  
-  // Reload the submission preview
-  loadSubmissionAnswers();
+  });
+  localStorage.setItem(
+    "submissionData",
+    JSON.stringify({ answers: submissionAnswers })
+  );
+
+  showWarning("Submission saved successfully!", () => {
+    hideWarning();
+  });
 }
 
-// --------------------- Load Submission Answers ---------------------
-async function loadSubmissionAnswers() {
+function loadSubmissionAnswers() {
   const submissionJSON = localStorage.getItem("submissionData");
   if (!submissionJSON) return;
-  
   const submissionData = JSON.parse(submissionJSON);
   const previewSection = document.querySelector(".preview-section");
   previewSection.innerHTML = "<h2>Answer Section</h2>";
-  
-  for (const [index, ans] of submissionData.answers.entries()) {
-    const previewQuestion = createElementWithAttributes('div', { classList: ['preview-question'] });
-    const questionLabel = createElementWithAttributes('label', { 
-      textContent: `${index + 1}. Question ${ans.id} (${ans.type}) ${ans.answer ? "" : "*"}`
-    });
+  submissionData.answers.forEach((ans, index) => {
+    const previewQuestion = document.createElement("div");
+    previewQuestion.classList.add("preview-question");
+    const questionLabel = document.createElement("label");
+    questionLabel.textContent = ans.question;
     previewQuestion.appendChild(questionLabel);
-    
+    const questionBody = document.createElement("div");
+    previewQuestion.appendChild(questionBody);
     if (ans.type === "File upload") {
-      const fileInfo = createElementWithAttributes('div', {
-        textContent: "File submitted (click to view)",
-        style: "color: blue; cursor: pointer;"
-      });
-      
-      fileInfo.addEventListener("click", async () => {
-        const file = await getFileFromDB(ans.id);
-        if (file) {
-          alert("File: " + file.name);
-        } else {
-          alert("No file found.");
-        }
-      });
-      
-      previewQuestion.appendChild(fileInfo);
+      const fileInfo = document.createElement("div");
+      fileInfo.textContent = "File saved ";
     } else {
-      const inputTypes = {
-        "Text": { type: "text" },
-        "Number": { type: "number" },
-        "Date": { type: "date" },
-        "Dropdown": { type: "text" },
-        "Multiple Dropdown": { type: "text" }
-      };
-      
-      const inputConfig = inputTypes[ans.type] || inputTypes["Text"];
-      const input = createElementWithAttributes('input', inputConfig);
+      let input;
+      if (ans.type !== "Dropdown" && ans.type != "Multiple Dropdown") {
+        input = populateQuestionTypeFields(ans.type, questionBody, true);
+      } else {
+        input = document.createElement("input");
+        input.type = "text";
+        questionBody.appendChild(input);
+      }
       input.value = ans.answer;
       input.disabled = true;
-      
-      previewQuestion.appendChild(input);
     }
-    
+
     previewSection.appendChild(previewQuestion);
-  }
-  
-  // Add disabled submit button
-  const submitBtn = createElementWithAttributes('button', {
-    textContent: 'Submit',
-    classList: ['submit-preview-btn'],
-    disabled: true
   });
-  
+  const submitBtn = document.createElement("button");
+  submitBtn.textContent = "Submit";
+  submitBtn.classList.add("submit-preview-btn");
+  submitBtn.disabled = true;
   previewSection.appendChild(submitBtn);
 }
 
-// --------------------- Drag & Drop Helper ---------------------
-function getDragAfterElement(container, y) {
-  const draggableElements = [...container.querySelectorAll(".question-element:not(.dragging)")];
-  
-  return draggableElements.reduce((closest, child) => {
-    const box = child.getBoundingClientRect();
-    const offset = y - box.top - box.height / 2;
-    
-    return offset < 0 && offset > closest.offset ? { offset, element: child } : closest;
-  }, { offset: Number.NEGATIVE_INFINITY }).element;
-}
-
-// --------------------- Question Listeners & Drag & Drop ---------------------
 function setupListeners(questionElement) {
-  // Click handler to show controls
-  questionElement.addEventListener("click", () => {
+  // Question click handler
+  questionElement.addEventListener("click", (e) => {
     hideRemaining(questionElement);
-    
-    const dropdown = questionElement.querySelector(".question-type-dropdown");
-    const footer = questionElement.querySelector(".question-element-footer");
-    
-    if (dropdown) dropdown.style.display = "block";
-    if (footer) footer.style.display = "flex";
-    
+    questionElement.querySelector(".question-type-dropdown").style.display =
+      "block";
+    questionElement.querySelector(".question-element-footer").style.display =
+      "flex";
+    const vadilationConfig =
+      questionElement.querySelector(".validation-config");
+    if (vadilationConfig) {
+      vadilationConfig.style.display = "block";
+    }
     positionButton(questionElement);
     questionElement.scrollIntoView({ behavior: "smooth", block: "center" });
   });
-
-  // Setup question input placeholder
+  // Question input setup
   const questionInput = questionElement.querySelector(".question-input");
-  if (questionInput) setupPlaceholder(questionInput);
+  setupPlaceholder(questionInput);
 
-  // Setup question type dropdown
-  const selectElement = questionElement.querySelector(".question-type-dropdown select");
+  // Question type dropdown handler
+  const selectElement = questionElement.querySelector(
+    ".question-type-dropdown select"
+  );
   const questionTypeContainer = questionElement.querySelector(".question-type");
-  
   if (selectElement && questionTypeContainer) {
     selectElement.addEventListener("change", (e) => {
       const selectedValue = e.target.options[e.target.selectedIndex].text;
       populateQuestionTypeFields(selectedValue, questionTypeContainer);
     });
   }
-
   // Drag & Drop setup
   questionElement.setAttribute("draggable", "true");
-  
   questionElement.addEventListener("dragstart", () => {
     draggedElement = questionElement;
     setTimeout(() => questionElement.classList.add("dragging"), 0);
   });
-  
   questionElement.addEventListener("dragend", () => {
     questionElement.classList.remove("dragging");
     draggedElement = null;
   });
-
-  // Delete with confirmation
+  // Delete button handler
   const deleteBtn = questionElement.querySelector(".delete-question");
   if (deleteBtn) {
     deleteBtn.addEventListener("click", () => {
       showWarning("Are you sure to delete question?", () => {
+        if (questionElement.previousElementSibling) {
+          positionButton(questionElement.previousElementSibling);
+        }
         questionElement.remove();
-        
-        // Update add button if no questions remain
-        if (document.querySelectorAll(".questions-body .question-element").length === 0) {
-          const addNewBtn = state.get("add-new-btn");
-          addNewBtn.style.position = "static";
-          addNewBtn.style.display = "block";
+        if (
+          document.querySelectorAll(".questions-body .question-element")
+            .length === 0
+        ) {
+          state.addNewBtn.style.position = "static";
+          state.addNewBtn.style.display = "block";
         }
       });
     });
   }
 }
 
-// --------------------- Add New Question ---------------------
 function addNewQuestion() {
   questionCounter++;
-  const template = state.get("questionTemplate");
   const questionsBody = document.querySelector(".questions-body");
-  const clone = template.content.cloneNode(true);
+  const clone = state.questionTemplate.content.cloneNode(true);
   const newQuestionElement = clone.querySelector(".question-element");
-
-  // Set unique ID and setup listeners
   newQuestionElement.id = `question-${questionCounter}`;
   setupListeners(newQuestionElement);
-
-  // Insert after current active question or at the end
   if (currentActiveQuestion) {
     const nextSibling = currentActiveQuestion.nextElementSibling;
     if (nextSibling) {
@@ -593,76 +599,182 @@ function addNewQuestion() {
   } else {
     questionsBody.appendChild(clone);
   }
-
-  // Focus and show controls
   newQuestionElement.querySelector(".question-input").focus();
-  newQuestionElement.querySelector(".question-type-dropdown").style.display = "block";
-  newQuestionElement.querySelector(".question-element-footer").style.display = "flex";
-  
+  newQuestionElement.querySelector(".question-type-dropdown").style.display =
+    "block";
+  newQuestionElement.querySelector(".question-element-footer").style.display =
+    "flex";
   positionButton(newQuestionElement);
   hideRemaining(newQuestionElement);
 }
 
-// --------------------- Save & Load Question Section (LS) ---------------------
+function initializeDOM() {
+  state.questionTemplate = document.getElementById("questionTemplate");
+  state.addNewBtn = document.querySelector(".add-new-btn");
+  state.preViewButton = document.querySelector(".preview-btn");
+  state.saveButton = document.querySelector(".save-btn");
+  state.warningDiv = document.getElementById("showWarningDiv");
+  state.warningMsg = document.getElementById("warning-msg");
+  state.addNewBtn.addEventListener("click", addNewQuestion);
+  state.preViewButton.addEventListener("click", generatePreview);
+  state.saveButton.addEventListener(
+    "click",
+    saveQuestionsSectionToLocalStorage
+  );
+
+  document.querySelector(".clear-btn").addEventListener("click", () => {
+    localStorage.clear();
+    location.reload();
+  });
+}
+
 function saveQuestionsSectionToLocalStorage() {
-  const questions = document.querySelectorAll(".questions-body .question-element");
-  const questionsData = [];
-  
-  questions.forEach((question) => {
+  const questions = document.querySelectorAll(
+    ".questions-body .question-element"
+  );
+  const questionsData = Array.from(questions).map((question) => {
     const id = question.id;
-    const questionText = question.querySelector(".question-input").textContent.trim();
-    
+    const questionText = question
+      .querySelector(".question-input")
+      .textContent.trim();
     const selectEl = question.querySelector(".question-type-dropdown select");
-    let questionType = "";
-    if (selectEl) {
-      questionType = selectEl.value || selectEl.options[selectEl.selectedIndex].text;
-    }
-    
+    const questionType = selectEl
+      ? selectEl.value || selectEl.options[selectEl.selectedIndex].text
+      : "";
+    const isRequired = question.querySelector(
+      ".switch input[type='checkbox']"
+    ).checked;
+
+    // Extract options for dropdown types
     let options = [];
-    if (questionType === "Dropdown" || questionType === "Multiple Dropdown") {
+    if (["Dropdown", "Multiple Dropdown"].includes(questionType)) {
       const optionsList = question.querySelector(".options-list");
       if (optionsList) {
-        options = Array.from(optionsList.querySelectorAll("li")).map(li => {
-          return li.firstChild ? li.firstChild.textContent.trim() : li.textContent.trim();
-        });
+        options = Array.from(optionsList.querySelectorAll("li")).map((li) =>
+          li.firstChild
+            ? li.firstChild.textContent.trim()
+            : li.textContent.trim()
+        );
       }
     }
-    
-    const isRequired = question.querySelector(".switch input[type='checkbox']").checked;
-    
-    questionsData.push({ id, questionText, questionType, options, isRequired });
+    // Extract validation settings
+    const validationConfig = getValidationConfigFromQuestion(
+      question,
+      questionType
+    );
+    return {
+      id,
+      questionText,
+      questionType,
+      options,
+      validationConfig,
+      isRequired,
+    };
   });
-  
+
   localStorage.setItem("questionsSectionData", JSON.stringify(questionsData));
   localStorage.setItem("questionCounter", questionCounter);
-  
-  console.log("Questions section saved.");
-  showWarning("Form questions saved successfully!");
+}
+
+function createDeleteButton() {
+  const deleteBtn = document.createElement("button");
+  deleteBtn.textContent = "✖";
+  deleteBtn.classList.add("delete-option-btn");
+  return deleteBtn;
+}
+
+function restoreDropdownOptions(questionTypeContainer, options) {
+  const optionsList = questionTypeContainer.querySelector(".options-list");
+  if (!optionsList || !options?.length) return;
+
+  const fragment = document.createDocumentFragment();
+
+  options.forEach((opt) => {
+    const listItem = document.createElement("li");
+    listItem.textContent = opt;
+
+    const deleteBtn = createDeleteButton();
+    deleteBtn.addEventListener("click", () => listItem.remove());
+
+    listItem.appendChild(deleteBtn);
+    fragment.appendChild(listItem);
+  });
+
+  optionsList.appendChild(fragment);
+}
+
+function restoreValidationSettings(
+  questionTypeContainer,
+  questionType,
+  validationConfig
+) {
+  if (!validationConfig) return;
+
+  const validationMap = {
+    Text: () => {
+      const maxLengthInput =
+        questionTypeContainer.querySelector(".max-length-input");
+      if (maxLengthInput && validationConfig.maxLength) {
+        maxLengthInput.value = validationConfig.maxLength;
+      }
+    },
+    Number: () => {
+      const minValueInput =
+        questionTypeContainer.querySelector(".min-value-input");
+      const maxValueInput =
+        questionTypeContainer.querySelector(".max-value-input");
+
+      if (minValueInput && validationConfig.min) {
+        minValueInput.value = validationConfig.min;
+      }
+      if (maxValueInput && validationConfig.max) {
+        maxValueInput.value = validationConfig.max;
+      }
+    },
+    Date: () => {
+      const minDateInput =
+        questionTypeContainer.querySelector(".min-date-input");
+      const maxDateInput =
+        questionTypeContainer.querySelector(".max-date-input");
+
+      if (minDateInput && validationConfig.minDate) {
+        minDateInput.value = validationConfig.minDate;
+      }
+      if (maxDateInput && validationConfig.maxDate) {
+        maxDateInput.value = validationConfig.maxDate;
+      }
+    },
+  };
+
+  const handler = validationMap[questionType];
+  if (handler) handler();
 }
 
 function loadQuestionsSectionFromLocalStorage() {
-  state.get("add-new-btn").style.display = "block";
-  
+  state.addNewBtn.style.display = "block";
   const dataJSON = localStorage.getItem("questionsSectionData");
   if (!dataJSON) return;
-  
+
   const questionsData = JSON.parse(dataJSON);
   const questionsBody = document.querySelector(".questions-body");
   questionsBody.innerHTML = "";
-  
+
+  const fragment = document.createDocumentFragment();
+
   questionsData.forEach((data) => {
-    const template = state.get("questionTemplate");
-    const clone = template.content.cloneNode(true);
+    const clone = state.questionTemplate.content.cloneNode(true);
     const questionElement = clone.querySelector(".question-element");
-    
-    // Set ID and question text
     questionElement.id = data.id;
+
+    // Set question text
     const questionInput = questionElement.querySelector(".question-input");
     questionInput.textContent = data.questionText || "Question";
     setupPlaceholder(questionInput);
-    
+
     // Set question type
-    const selectEl = questionElement.querySelector(".question-type-dropdown select");
+    const selectEl = questionElement.querySelector(
+      ".question-type-dropdown select"
+    );
     if (selectEl && data.questionType) {
       for (let i = 0; i < selectEl.options.length; i++) {
         if (selectEl.options[i].text === data.questionType) {
@@ -671,40 +783,42 @@ function loadQuestionsSectionFromLocalStorage() {
         }
       }
     }
-    
-    // Populate type fields and options
-    const questionTypeContainer = questionElement.querySelector(".question-type");
+
+    // Populate question fields
+    const questionTypeContainer =
+      questionElement.querySelector(".question-type");
     if (questionTypeContainer && data.questionType) {
       populateQuestionTypeFields(data.questionType, questionTypeContainer);
-      
-      if ((data.questionType === "Dropdown" || data.questionType === "Multiple Dropdown") && data.options) {
-        const optionsList = questionTypeContainer.querySelector(".options-list");
-        if (optionsList) {
-          data.options.forEach((opt) => {
-            const listItem = createElementWithAttributes('li', { textContent: opt });
-            const deleteBtn = createElementWithAttributes('button', {
-              textContent: '✖',
-              classList: ['delete-option-btn']
-            });
-            
-            deleteBtn.addEventListener("click", () => listItem.remove());
-            listItem.appendChild(deleteBtn);
-            optionsList.appendChild(listItem);
-          });
-        }
+
+      // Restore validation and options
+      restoreValidationSettings(
+        questionTypeContainer,
+        data.questionType,
+        data.validationConfig
+      );
+
+      if (
+        ["Dropdown", "Multiple Dropdown"].includes(data.questionType) &&
+        data.options
+      ) {
+        restoreDropdownOptions(questionTypeContainer, data.options);
       }
     }
-    
+
     // Set required state
-    const requiredSwitch = questionElement.querySelector(".switch input[type='checkbox']");
+    const requiredSwitch = questionElement.querySelector(
+      ".switch input[type='checkbox']"
+    );
     if (requiredSwitch) {
       requiredSwitch.checked = data.isRequired;
     }
-    
+
     setupListeners(questionElement);
-    questionsBody.appendChild(clone);
+    fragment.appendChild(clone);
   });
-  
+
+  questionsBody.appendChild(fragment);
+
   // Restore question counter
   const storedCounter = localStorage.getItem("questionCounter");
   if (storedCounter) {
@@ -712,42 +826,16 @@ function loadQuestionsSectionFromLocalStorage() {
   }
 }
 
-// --------------------- Initialize DOM & State ---------------------
-function initializeDOM() {
-  // Cache frequently used elements
-  state.elements = {
-    'questionTemplate': document.getElementById("questionTemplate"),
-    'add-new-btn': document.querySelector(".add-new-btn"),
-    'preview-btn': document.querySelector(".preview-btn"),
-    'save-btn': document.querySelector(".save-btn"),
-    'showWarningDiv': document.getElementById("showWarningDiv"),
-    'warning-msg': document.getElementById("warning-msg")
-  };
-
-  // Set up event listeners
-  state.get("add-new-btn").addEventListener("click", addNewQuestion);
-  state.get("preview-btn").addEventListener("click", generatePreview);
-  state.get("save-btn").addEventListener("click", saveQuestionsSectionToLocalStorage);
-}
-
-// --------------------- DOMContentLoaded & Drag Over Setup ---------------------
 document.addEventListener("DOMContentLoaded", () => {
-  // Initialize components
-  initDB(); 
   initializeDOM();
-  
-  // Load previously saved questions or add new one
   loadQuestionsSectionFromLocalStorage();
   if (!localStorage.getItem("questionsSectionData")) {
     addNewQuestion();
   }
-  
-  // Set up drag and drop for questions container
   const questionsBody = document.querySelector(".questions-body");
   questionsBody.addEventListener("dragover", (e) => {
     e.preventDefault();
     const afterElement = getDragAfterElement(questionsBody, e.clientY);
-    
     if (draggedElement) {
       if (afterElement == null) {
         questionsBody.appendChild(draggedElement);
@@ -756,7 +844,5 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
   });
-  
-  // Load submitted answers if any
   loadSubmissionAnswers();
 });
