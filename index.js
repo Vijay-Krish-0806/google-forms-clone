@@ -1,16 +1,6 @@
-
-  //Validation Constants
-const TEXT_MAX_LENGTH = 100;
-const NUMBER_MIN = 1;
-const NUMBER_MAX = 100;
-const DATE_MIN = "2020-01-01";
-const DATE_MAX = "2025-12-31";
-
-//Global Variables & State
 let questionCounter = 0;
 let draggedElement = null;
 let currentActiveQuestion = null;
-
 const state = {
   questionTemplate: null,
   addNewBtn: null,
@@ -19,7 +9,7 @@ const state = {
   warningDiv: null,
   warningMsg: null,
 };
-
+//utility function to hide elements in all other questions
 function hideRemaining(currentElement) {
   document
     .querySelectorAll(".questions-body .question-element")
@@ -29,25 +19,26 @@ function hideRemaining(currentElement) {
         const footerEl = question.querySelector(".question-element-footer");
         const vadilationConfigDiv =
           question.querySelector(".validation-config");
+          const optionsContainer=question.querySelector(".options-container")
         if (dropdownEl) dropdownEl.style.display = "none";
         if (footerEl) footerEl.style.display = "none";
         if (vadilationConfigDiv) vadilationConfigDiv.style.display = "none";
+        if(optionsContainer) optionsContainer.style.display = "none";
       }
     });
 }
-
+//position the button beside the current question
 function positionButton(elem) {
   currentActiveQuestion = elem;
   const rect = elem.getBoundingClientRect();
   const containerRect = document
     .querySelector(".questions-section")
     .getBoundingClientRect();
-  const addNewBtn = state.addNewBtn;
-  addNewBtn.style.top = rect.top - containerRect.top + 50 + "px";
-  addNewBtn.style.left = rect.right - containerRect.left + 10 + "px";
-  addNewBtn.style.display = "block";
+  state.addNewBtn.style.top = rect.top - containerRect.top + 50 + "px";
+  state.addNewBtn.style.left = rect.right - containerRect.left + 10 + "px";
+  state.addNewBtn.style.display = "block";
 }
-
+//function to show warning popup (takes 2 callbacks okay and cancel)
 function showWarning(message, confirmAction = null, cancelAction = null) {
   const warningDiv =
     state.warningDiv || document.getElementById("showWarningDiv");
@@ -77,15 +68,14 @@ function showWarning(message, confirmAction = null, cancelAction = null) {
   newOkBtn.addEventListener("click", okHandler);
   newCancelBtn.addEventListener("click", cancelHandler);
 }
-
+//to hide the popup
 function hideWarning() {
   const warningDiv =
     state.warningDiv || document.getElementById("showWarningDiv");
   warningDiv.style.display = "none";
 }
-
+// as question field is div contenteditable to Mimic placeholder behavior on contenteditable divs
 function setupPlaceholder(questionInput) {
-  // Mimic placeholder behavior on contenteditable divs
   if (questionInput.textContent.trim() === "Question") {
     questionInput.classList.add("placeholder");
   }
@@ -105,7 +95,7 @@ function setupPlaceholder(questionInput) {
     }
   });
 }
-
+//function for drag and drop
 function getDragAfterElement(container, y) {
   const draggableElements = [
     ...container.querySelectorAll(".question-element:not(.dragging)"),
@@ -121,53 +111,64 @@ function getDragAfterElement(container, y) {
     { offset: Number.NEGATIVE_INFINITY }
   ).element;
 }
-
+//to create error span
+function createErrorSpan() {
+  let errorSpan = document.createElement("span");
+  errorSpan.className = "error-message";
+  errorSpan.style.color = "red";
+  errorSpan.style.fontSize = "0.9em";
+  return errorSpan;
+}
+//function to create delete button in options field in question section
+function createDeleteButton() {
+  const deleteBtn = document.createElement("button");
+  deleteBtn.textContent = "✖";
+  deleteBtn.classList.add("delete-option-btn");
+  return deleteBtn;
+}
+//to create dynamic elements to take input from users for validations (maxLength and ranges)
 function createValidationConfig(type) {
   switch (type) {
     case "Text":
       return `
           <label>Max Length: 
-            <input type="number" class="max-length-input" value="${TEXT_MAX_LENGTH}" min="1">
+            <input type="number" class="max-length-input"  min="1">
           </label>
         `;
     case "Number":
       return `
           <label>Min Value: 
-            <input type="number" class="min-value-input" value="${NUMBER_MIN}">
+            <input type="number" class="min-value-input">
           </label>
           <label>Max Value: 
-            <input type="number" class="max-value-input" value="${NUMBER_MAX}">
+            <input type="number" class="max-value-input" >
           </label>
         `;
     case "Date":
       return `
           <label>Min Date: 
-            <input type="date" class="min-date-input" value="${DATE_MIN}">
+            <input type="date" class="min-date-input" >
           </label>
           <label>Max Date: 
-            <input type="date" class="max-date-input" value="${DATE_MAX}">
+            <input type="date" class="max-date-input">
           </label>
         `;
     default:
       return "";
   }
 }
-
+//to take options from user dynamically
 function createDropdownOptionsContainer() {
   const optionsContainer = document.createElement("div");
   optionsContainer.classList.add("options-container");
-
   const inputField = document.createElement("input");
   inputField.type = "text";
   inputField.placeholder = "Enter option";
-
   const addButton = document.createElement("button");
   addButton.textContent = "Add Option";
   addButton.classList.add("add-option-btn");
-
   const optionsList = document.createElement("ul");
   optionsList.classList.add("options-list");
-
   addButton.addEventListener("click", () => {
     if (inputField.value.trim() !== "") {
       const listItem = document.createElement("li");
@@ -183,14 +184,12 @@ function createDropdownOptionsContainer() {
       inputField.value = "";
     }
   });
-
   optionsContainer.appendChild(inputField);
   optionsContainer.appendChild(addButton);
   optionsContainer.appendChild(optionsList);
-
   return optionsContainer;
 }
-
+// function which is used for creating input fields based on selected type from dropdown in the question
 function populateQuestionTypeFields(
   selectedValue,
   container,
@@ -222,7 +221,6 @@ function populateQuestionTypeFields(
   inputElement.disabled = true ? !isPreview : false;
   container.appendChild(inputElement);
 
-  //   Add validation config
   if (!isPreview) {
     const validationDiv = document.createElement("div");
     validationDiv.classList.add("validation-config");
@@ -231,65 +229,85 @@ function populateQuestionTypeFields(
   }
   return inputElement;
 }
-
+//function to get validation values given by user
 function getValidationConfigFromQuestion(question, questionType) {
   const validationConfig = {};
   switch (questionType) {
     case "Text":
       const maxLengthInput = question.querySelector(".max-length-input");
-      validationConfig.maxLength = maxLengthInput
-        ? parseInt(maxLengthInput.value)
-        : TEXT_MAX_LENGTH;
+      validationConfig.maxLength = parseInt(maxLengthInput.value);
+
       break;
     case "Number":
       const minValueInput = question.querySelector(".min-value-input");
       const maxValueInput = question.querySelector(".max-value-input");
-      validationConfig.min = minValueInput
-        ? parseInt(minValueInput.value)
-        : NUMBER_MIN;
-      validationConfig.max = maxValueInput
-        ? parseInt(maxValueInput.value)
-        : NUMBER_MAX;
+      validationConfig.min = parseInt(minValueInput.value);
+
+      validationConfig.max = parseInt(maxValueInput.value);
+
       break;
     case "Date":
       const minDateInput = question.querySelector(".min-date-input");
       const maxDateInput = question.querySelector(".max-date-input");
-      validationConfig.minDate = minDateInput ? minDateInput.value : DATE_MIN;
-      validationConfig.maxDate = maxDateInput ? maxDateInput.value : DATE_MAX;
+      validationConfig.minDate = minDateInput.value;
+      validationConfig.maxDate = maxDateInput.value;
       break;
   }
   return validationConfig;
 }
-
+//function to create dropdowns to show in preview
 function createPreviewSelect(questionType, optionsList, isRequired) {
-  const select = document.createElement("select");
-  select.multiple = questionType === "Multiple Dropdown";
-  const defaultOption = document.createElement("option");
-  defaultOption.textContent = "Choose an option";
-  defaultOption.value = "";
-  select.appendChild(defaultOption);
-  if (optionsList) {
-    optionsList.querySelectorAll("li").forEach((li) => {
-      const option = document.createElement("option");
-      option.textContent = li.textContent.replace("✖", "").trim();
-      option.value = li.textContent.replace("✖", "").trim().toLowerCase();
-      select.appendChild(option);
-    });
+  if (questionType === "Multiple Dropdown") {
+    const select = document.createElement("select");
+    select.multiple = true;
+    select.className = "multi-select";
+
+    if (optionsList) {
+      optionsList.querySelectorAll("li").forEach((li) => {
+        const option = document.createElement("option");
+        option.textContent = li.textContent.replace("✖", "").trim();
+        option.value = li.textContent.replace("✖", "").trim().toLowerCase();
+        select.appendChild(option);
+      });
+    }
+
+    if (isRequired) select.required = true;
+    const helpText = document.createElement("div");
+    helpText.className = "help-text";
+    helpText.textContent =
+      "Hold Ctrl (or Cmd on Mac) to select multiple options";
+    const container = document.createElement("div");
+    container.className = "multi-select-container";
+    container.appendChild(select);
+    container.appendChild(helpText);
+
+    return container;
+  } else {
+    const select = document.createElement("select");
+    const defaultOption = document.createElement("option");
+    defaultOption.textContent = "Choose an option";
+    defaultOption.value = "";
+    select.appendChild(defaultOption);
+
+    if (optionsList) {
+      optionsList.querySelectorAll("li").forEach((li) => {
+        const option = document.createElement("option");
+        option.textContent = li.textContent.replace("✖", "").trim();
+        option.value = li.textContent.replace("✖", "").trim().toLowerCase();
+        select.appendChild(option);
+      });
+    }
+    if (isRequired) select.required = true;
+    return select;
   }
-  if (isRequired) select.required = true;
-  return select;
 }
-
-function createErrorSpan() {
-  let errorSpan = document.createElement("span");
-  errorSpan.className = "error-message";
-  errorSpan.style.color = "red";
-  errorSpan.style.fontSize = "0.9em";
-  return errorSpan;
-}
-
-// --------------------- Validation Functions ---------------------
-function attachValidation(input, questionType, isRequired, validationConfig) {
+// to attach the validation to each question if validation  is present
+function attachValidation(
+  input,
+  questionType,
+  isRequired,
+  validationConfig = {}
+) {
   let errorSpan = input?.parentNode.querySelector(".error-message");
   if (!errorSpan) {
     errorSpan = createErrorSpan();
@@ -304,28 +322,46 @@ function attachValidation(input, questionType, isRequired, validationConfig) {
     } else if (value) {
       switch (questionType) {
         case "Text":
-          const maxLength = validationConfig?.maxLength || TEXT_MAX_LENGTH;
-          if (value.length > maxLength) {
+          const maxLength = validationConfig.maxLength;
+          if (maxLength !== undefined && value.length > maxLength) {
             errorMsg = `Maximum length is ${maxLength} characters`;
           }
           break;
         case "Number":
           const num = Number(value);
-          const minValue = validationConfig?.min || NUMBER_MIN;
-          const maxValue = validationConfig?.max || NUMBER_MAX;
+          const minValue = validationConfig.min;
+          const maxValue = validationConfig.max;
 
           if (isNaN(num)) {
             errorMsg = "Please enter a valid number";
-          } else if (num < minValue || num > maxValue) {
-            errorMsg = `Number must be between ${minValue} and ${maxValue}`;
+          } else if (
+            (minValue !== undefined && num < minValue) ||
+            (maxValue !== undefined && num > maxValue)
+          ) {
+            if (minValue !== undefined && maxValue !== undefined) {
+              errorMsg = `Number must be between ${minValue} and ${maxValue}`;
+            } else if (minValue !== undefined) {
+              errorMsg = `Number must be at least ${minValue}`;
+            } else if (maxValue !== undefined) {
+              errorMsg = `Number must be at most ${maxValue}`;
+            }
           }
           break;
         case "Date":
-          const minDate = validationConfig?.minDate || DATE_MIN;
-          const maxDate = validationConfig?.maxDate || DATE_MAX;
+          const minDate = validationConfig.minDate;
+          const maxDate = validationConfig.maxDate;
 
-          if (value < minDate || value > maxDate) {
-            errorMsg = `Date must be between ${minDate} and ${maxDate}`;
+          if (
+            (minDate !== undefined && value < minDate) ||
+            (maxDate !== undefined && value > maxDate)
+          ) {
+            if (minDate !== undefined && maxDate !== undefined) {
+              errorMsg = `Date must be between ${minDate} and ${maxDate}`;
+            } else if (minDate !== undefined && minDate !== null) {
+              errorMsg = `Date must be on or after ${minDate}`;
+            } else if (maxDate !== undefined && maxDate !== null) {
+              errorMsg = `Date must be on or before ${maxDate}`;
+            }
           }
           break;
       }
@@ -334,22 +370,23 @@ function attachValidation(input, questionType, isRequired, validationConfig) {
     errorSpan.textContent = errorMsg;
     return errorMsg === "";
   }
-
   const eventType = questionType === "Date" ? "change" : "input";
   input.addEventListener(eventType, validate);
   input.addEventListener("blur", validate);
 
   return validate;
 }
-
+//to validate entire form at once
 function validatePreviewForm() {
   let valid = true;
   let firstInvalidField = null;
   const fields = document.querySelectorAll(
-    ".preview-section input, .preview-section select, .preview-section textarea"
+    ".preview-section input, .preview-section select"
   );
+  console.log(fields);
   fields.forEach((field) => {
-    if (field.type === "date") {
+    console.log(field.type);
+    if (field.type === "date" || field.type==="select-one") {
       field.dispatchEvent(new Event("change", { bubbles: true }));
       field.dispatchEvent(new Event("blur", { bubbles: true }));
     } else {
@@ -365,7 +402,7 @@ function validatePreviewForm() {
   });
   return { valid, firstInvalidField };
 }
-
+//function to generate the preview
 function generatePreview() {
   const previewSection = document.querySelector(".preview-section");
   previewSection.innerHTML = "<h2>Preview Section</h2>";
@@ -374,6 +411,9 @@ function generatePreview() {
     .forEach((question, index) => {
       const questionText =
         question.querySelector(".question-input").textContent;
+      if (questionText === "Question" || questionText.trim() === "") {
+        return;
+      }
       const selectEl = question.querySelector(".question-type-dropdown select");
       const questionType =
         (selectEl &&
@@ -388,7 +428,6 @@ function generatePreview() {
       );
       const previewQuestion = document.createElement("div");
       previewQuestion.classList.add("preview-question");
-      // Store data attributes
       previewQuestion.dataset.questionId =
         question.querySelector(".question-input").id || question.id;
       previewQuestion.dataset.questionType = questionType;
@@ -420,7 +459,7 @@ function generatePreview() {
         previewQuestion.appendChild(select);
         select.addEventListener("change", () => {
           const errorSpan = select.parentNode.querySelector(".error-message");
-          if (!select.value && isRequired) {
+          if (isRequired && !select.value) {
             if (errorSpan) errorSpan.textContent = "Please select an option";
           } else if (errorSpan) {
             errorSpan.textContent = "";
@@ -441,7 +480,7 @@ function generatePreview() {
 
   previewSection.appendChild(submitBtn);
 }
-
+//to submit answers and store in Local storage
 function submitAnswers() {
   const { valid, firstInvalidField } = validatePreviewForm();
   if (!valid) {
@@ -450,37 +489,48 @@ function submitAnswers() {
     });
     return;
   }
-  const submissionAnswers = [];
-  const previewQuestions = document.querySelectorAll(
-    ".preview-section .preview-question"
-  );
-  previewQuestions.forEach((pq) => {
-    const questionId = pq.dataset.questionId;
-    const questionType = pq.dataset.questionType;
-    const field = pq.querySelector("select") || pq.querySelector("input");
-    const question = pq.querySelector("label");
-    if (questionType === "File upload") {
-      console.log("File saved");
-    } else {
-      const answer = field ? field.value : "";
-      submissionAnswers.push({
-        id: questionId,
-        type: questionType,
-        question: question.textContent,
-        answer: answer,
+  showWarning(
+    "Are you sure you want to submit your answers?",
+    () => {
+      const submissionAnswers = [];
+      const previewQuestions = document.querySelectorAll(
+        ".preview-section .preview-question"
+      );
+      previewQuestions.forEach((pq) => {
+        const questionId = pq.dataset.questionId;
+        const questionType = pq.dataset.questionType;
+        const field = pq.querySelector("select") || pq.querySelector("input");
+        const question = pq.querySelector("label");
+        if (questionType === "File upload") {
+          console.log("File saved");
+        } else {
+          const answer = field ? field.value : "";
+          submissionAnswers.push({
+            id: questionId,
+            type: questionType,
+            question: question.textContent,
+            answer: answer,
+          });
+        }
       });
+      localStorage.setItem(
+        "submissionData",
+        JSON.stringify({ answers: submissionAnswers })
+      );
+      showWarning(
+        "Submission saved successfully!",
+        () => {
+          hideWarning();
+        },
+        null
+      );
+    },
+    () => {
+      console.log("Submission cancelled");
     }
-  });
-  localStorage.setItem(
-    "submissionData",
-    JSON.stringify({ answers: submissionAnswers })
   );
-
-  showWarning("Submission saved successfully!", () => {
-    hideWarning();
-  });
 }
-
+// to load submitted answers from local storage
 function loadSubmissionAnswers() {
   const submissionJSON = localStorage.getItem("submissionData");
   if (!submissionJSON) return;
@@ -510,7 +560,6 @@ function loadSubmissionAnswers() {
       input.value = ans.answer;
       input.disabled = true;
     }
-
     previewSection.appendChild(previewQuestion);
   });
   const submitBtn = document.createElement("button");
@@ -519,7 +568,7 @@ function loadSubmissionAnswers() {
   submitBtn.disabled = true;
   previewSection.appendChild(submitBtn);
 }
-
+// to set up event listeners for each question in questions section
 function setupListeners(questionElement) {
   // Question click handler
   questionElement.addEventListener("click", (e) => {
@@ -533,13 +582,17 @@ function setupListeners(questionElement) {
     if (vadilationConfig) {
       vadilationConfig.style.display = "block";
     }
+    const optionsContainer =
+      questionElement.querySelector(".options-container");
+    if (optionsContainer) {
+      optionsContainer.style.display = "block";
+    }
     positionButton(questionElement);
     questionElement.scrollIntoView({ behavior: "smooth", block: "center" });
   });
   // Question input setup
   const questionInput = questionElement.querySelector(".question-input");
   setupPlaceholder(questionInput);
-
   // Question type dropdown handler
   const selectElement = questionElement.querySelector(
     ".question-type-dropdown select"
@@ -555,7 +608,7 @@ function setupListeners(questionElement) {
   questionElement.setAttribute("draggable", "true");
   questionElement.addEventListener("dragstart", () => {
     draggedElement = questionElement;
-    setTimeout(() => questionElement.classList.add("dragging"), 0);
+    questionElement.classList.add("dragging");
   });
   questionElement.addEventListener("dragend", () => {
     questionElement.classList.remove("dragging");
@@ -581,7 +634,7 @@ function setupListeners(questionElement) {
     });
   }
 }
-
+//function to create a new question when add button is clicked
 function addNewQuestion() {
   questionCounter++;
   const questionsBody = document.querySelector(".questions-body");
@@ -607,7 +660,7 @@ function addNewQuestion() {
   positionButton(newQuestionElement);
   hideRemaining(newQuestionElement);
 }
-
+//function to initialize the state variables
 function initializeDOM() {
   state.questionTemplate = document.getElementById("questionTemplate");
   state.addNewBtn = document.querySelector(".add-new-btn");
@@ -627,7 +680,7 @@ function initializeDOM() {
     location.reload();
   });
 }
-
+//to save questions to local storage
 function saveQuestionsSectionToLocalStorage() {
   const questions = document.querySelectorAll(
     ".questions-body .question-element"
@@ -644,8 +697,6 @@ function saveQuestionsSectionToLocalStorage() {
     const isRequired = question.querySelector(
       ".switch input[type='checkbox']"
     ).checked;
-
-    // Extract options for dropdown types
     let options = [];
     if (["Dropdown", "Multiple Dropdown"].includes(questionType)) {
       const optionsList = question.querySelector(".options-list");
@@ -657,7 +708,6 @@ function saveQuestionsSectionToLocalStorage() {
         );
       }
     }
-    // Extract validation settings
     const validationConfig = getValidationConfigFromQuestion(
       question,
       questionType
@@ -674,20 +724,14 @@ function saveQuestionsSectionToLocalStorage() {
 
   localStorage.setItem("questionsSectionData", JSON.stringify(questionsData));
   localStorage.setItem("questionCounter", questionCounter);
+  showWarning("Questions saved successfully");
 }
-
-function createDeleteButton() {
-  const deleteBtn = document.createElement("button");
-  deleteBtn.textContent = "✖";
-  deleteBtn.classList.add("delete-option-btn");
-  return deleteBtn;
-}
-
+//to restore dropdown options when refresh
 function restoreDropdownOptions(questionTypeContainer, options) {
   const optionsList = questionTypeContainer.querySelector(".options-list");
   if (!optionsList || !options?.length) return;
 
-  const fragment = document.createDocumentFragment();
+  const fragment = document.createElement("div");
 
   options.forEach((opt) => {
     const listItem = document.createElement("li");
@@ -702,7 +746,7 @@ function restoreDropdownOptions(questionTypeContainer, options) {
 
   optionsList.appendChild(fragment);
 }
-
+//to restore dropdown validations when refresh
 function restoreValidationSettings(
   questionTypeContainer,
   questionType,
@@ -749,28 +793,23 @@ function restoreValidationSettings(
   const handler = validationMap[questionType];
   if (handler) handler();
 }
-
+//to load questions from Local storage
 function loadQuestionsSectionFromLocalStorage() {
   state.addNewBtn.style.display = "block";
   const dataJSON = localStorage.getItem("questionsSectionData");
   if (!dataJSON) return;
-
   const questionsData = JSON.parse(dataJSON);
   const questionsBody = document.querySelector(".questions-body");
   questionsBody.innerHTML = "";
-
-  const fragment = document.createDocumentFragment();
-
+  const fragment = document.createElement("div");
   questionsData.forEach((data) => {
     const clone = state.questionTemplate.content.cloneNode(true);
     const questionElement = clone.querySelector(".question-element");
     questionElement.id = data.id;
-
     // Set question text
     const questionInput = questionElement.querySelector(".question-input");
     questionInput.textContent = data.questionText || "Question";
     setupPlaceholder(questionInput);
-
     // Set question type
     const selectEl = questionElement.querySelector(
       ".question-type-dropdown select"
@@ -783,20 +822,17 @@ function loadQuestionsSectionFromLocalStorage() {
         }
       }
     }
-
     // Populate question fields
     const questionTypeContainer =
       questionElement.querySelector(".question-type");
     if (questionTypeContainer && data.questionType) {
       populateQuestionTypeFields(data.questionType, questionTypeContainer);
-
       // Restore validation and options
       restoreValidationSettings(
         questionTypeContainer,
         data.questionType,
         data.validationConfig
       );
-
       if (
         ["Dropdown", "Multiple Dropdown"].includes(data.questionType) &&
         data.options
@@ -804,7 +840,6 @@ function loadQuestionsSectionFromLocalStorage() {
         restoreDropdownOptions(questionTypeContainer, data.options);
       }
     }
-
     // Set required state
     const requiredSwitch = questionElement.querySelector(
       ".switch input[type='checkbox']"
@@ -812,20 +847,16 @@ function loadQuestionsSectionFromLocalStorage() {
     if (requiredSwitch) {
       requiredSwitch.checked = data.isRequired;
     }
-
     setupListeners(questionElement);
     fragment.appendChild(clone);
   });
-
   questionsBody.appendChild(fragment);
-
   // Restore question counter
   const storedCounter = localStorage.getItem("questionCounter");
   if (storedCounter) {
     questionCounter = parseInt(storedCounter, 10);
   }
 }
-
 document.addEventListener("DOMContentLoaded", () => {
   initializeDOM();
   loadQuestionsSectionFromLocalStorage();
